@@ -25,6 +25,7 @@ from sklearn.model_selection import train_test_split
 import os
 import tempfile
 import time
+import matplotlib.pyplot as plt
 
 if os.path.exists('./dataset.csv'): 
     df = pd.read_csv('dataset.csv', index_col=None)
@@ -138,6 +139,7 @@ if choice == "Modelling":
 
 if choice == "Model_Selection":
         
+        st.header("Model Comparison")
         st.dataframe(st.session_state.Compare_df)
         
         st.session_state.select_model = st.selectbox("Select the best model", st.session_state.Compare_df.index)
@@ -145,26 +147,79 @@ if choice == "Model_Selection":
         # best 모델 선정
         st.session_state.best_model = st.session_state.Model.create_model(st.session_state.select_model)
 
+        if st.session_state.best_model is not None:
+
+            st.header("Hyperparameter Tuning")
+
+            turn_option = st.radio("Turn 유무 선택", ['실행', '미실행'])
+
+            if st.button('Hyperparameter Tuning'):
+
+                with st.spinner('Hyperparameter Tuning in progress...'):
+
+                    st.session_state.tuning_start_time = time.time()
+
+                    if turn_option == '실행':
+                        st.session_state.turn_model =st.session_state.Model.tune_model(st.session_state.best_model)
+
+                    else:
+                        st.session_state.turn_model = st.session_state.best_model
+
+                    st.session_state.tuning_end_time = time.time()
+                
+                
+                st.info("Hyperparameter Tuning Time: " + str(st.session_state.tuning_end_time
+                                                             - st.session_state.tuning_start_time))
+            
+                st.success('Hyperparameter Tuning Done!')
+
+                # 튜닝된 모델의 파라미터 확인
+                if st.session_state.turn_model is not None:
+                    params_before = pd.DataFrame(
+                        [st.session_state.best_model.get_params()]).T.reset_index()
+                    params_before.columns = ['params', 'Before']
+
+                    params_after = pd.DataFrame(
+                        [st.session_state.turn_model.get_params()]).T.reset_index()
+                    params_after.columns = ['params', 'After']
+
+                    params_comparison = params_before.merge(params_after, on='params')
+
+                    st.header("The Report of Hyperparameter Tuning")
+
+                    st.subheader("Turning Before Model Classification Report")
+                    img_before = st.session_state.Model.plot_model(
+                        st.session_state.best_model, plot="class_report", display_format="streamlit", save=True)
+                    st.image(img_before)
+
+                    st.subheader("Turning After Model Classification Report")
+                    img_after = st.session_state.Model.plot_model(
+                        st.session_state.turn_model, plot="class_report", display_format="streamlit", save=True)
+                    st.image(img_after)
+
+                    st.subheader("Hyperparameter Tuning Before & After")
+                    st.dataframe(params_comparison)
+
         # 모델의 ROC Curves 시각화
-        st.subheader("AUC Curve")
+        st.subheader("AUC Curve_After Tuning")
         img = st.session_state.Model.plot_model(
-            st.session_state.best_model, plot="auc", display_format="streamlit", save=True
+            st.session_state.turn_model, plot="auc", display_format="streamlit", save=True
         )
         st.image(img)
 
-        st.subheader("Confusion Matrix")
+        st.subheader("Confusion Matrix_After Tuning")
         img2 = st.session_state.Model.plot_model(
-            st.session_state.best_model, plot="confusion_matrix", display_format="streamlit", save=True
+            st.session_state.turn_model, plot="confusion_matrix", display_format="streamlit", save=True
         )
         st.image(img2)
 
-        st.subheader("Feature Importance")
+        st.subheader("Feature Importance_After Tuning")
         img3 = st.session_state.Model.plot_model(
-            st.session_state.best_model, plot="feature", display_format="streamlit", save=True
+            st.session_state.turn_model, plot="feature", display_format="streamlit", save=True
         )
         st.image(img3)
-        
-        st.session_state.Model.save_model(st.session_state.best_model, 'best_model')
+
+        st.session_state.Model.save_model(st.session_state.turn_model, 'best_model')
 
 if choice == "Evaluation":
 
@@ -176,7 +231,7 @@ if choice == "Evaluation":
 
         with st.spinner('Evaluation in progress...'):
         
-            y_pred_df = st.session_state.Model.predict_model(st.session_state.best_model, 
+            y_pred_df = st.session_state.Model.predict_model(st.session_state.turn_model, 
                                                           data=st.session_state.X_test)
             y_pred_df['y_true'] = st.session_state.y_test
     

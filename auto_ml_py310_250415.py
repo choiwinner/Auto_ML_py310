@@ -8,6 +8,12 @@
 #pip install streamlit-pandas-profiling
 #pip install pandas==2.0.3 -> ydata_profiling 4.16.1 requires pandas 2.0.3
 
+#참고 자료
+# classication : https://wikidocs.net/207087
+# regression : https://wikidocs.net/252385
+# 시계열 예측 : https://teddylee777.github.io/machine-learning/pycaret-timeseries/
+# regression error : https://whiplash-bd.tistory.com/45
+# sklearn metrics : https://runebook.dev/ko/docs/scikit_learn/modules/generated/sklearn.metrics.root_mean_squared_error
 
 # data source 
 # https://www.kaggle.com/datasets/teejmahal20/airline-passenger-satisfaction/data
@@ -20,7 +26,8 @@ import pycaret.classification as cls
 import pycaret.regression as reg
 from ydata_profiling import ProfileReport
 from streamlit_pandas_profiling import st_profile_report
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, mean_absolute_error, mean_squared_error
+from sklearn.metrics import root_mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 import os
 import tempfile
@@ -58,6 +65,20 @@ if choice == "Profiling":
 if choice == "Data_Preprocessing": 
     st.title("Data_Preprocessing")
 
+    st.subheader("Select Modelling Type")
+
+    mdl = st.selectbox('Chose Modelling Type : ',['Classification','Regression'])
+
+    if mdl == 'Classification':
+        st.session_state.Model = cls
+        #from pycaret.classification import setup, compare_models, pull, save_model 
+
+    elif mdl == 'Regression':
+        st.session_state.Model = reg
+        #from pycaret.regression import setup, compare_models, pull, save_model
+
+    st.info("Your model of choice is " + mdl) 
+
     st.subheader("Drop & Duplicate")
     
     drop_options = df.columns
@@ -81,7 +102,13 @@ if choice == "Data_Preprocessing":
 
     test_size = st.slider("Select test size(%)?", 0.00, 1.00, 0.05)
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42,stratify=y)
+    if st.session_state.Model == cls:
+
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42, stratify=y)
+
+    elif st.session_state.Model == reg:
+
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
 
     st.subheader("Train and Test Data")
     st.info("Train Data Length: " + str(len(X_train)))
@@ -110,38 +137,44 @@ if choice == "Data_Preprocessing":
     st.session_state.y_test = y_test
     
 if choice == "Modelling": 
-    mdl = st.selectbox('Chose Modelling Type : ',['Classification','Regression'])
     
     if st.button('Run Modelling'):
         st.session_state.modelling_start_time = time.time()
 
         with st.spinner('Modelling in progress...'):
-        
-            if mdl == 'Classification':
-                st.session_state.Model = cls
-                #from pycaret.classification import setup, compare_models, pull, save_model 
-
-            elif mdl == 'Regression':
-                st.session_state.Model = reg
-                #from pycaret.regression import setup, compare_models, pull, save_model
-
-            st.info("Your model of choice is " + mdl) 
 
             st.session_state.Model.setup(st.session_state.X_train, 
                                          target=st.session_state.y_train)
             st.session_state.Setup_df = st.session_state.Model.pull()
-            st.dataframe(st.session_state.Setup_df)
             st.session_state.Model.compare_models()
             st.session_state.Compare_df = st.session_state.Model.pull()
-        
-        st.session_state.modelling_end_time = time.time()
-        st.info("Modelling Time: " + str(st.session_state.modelling_end_time - st.session_state.modelling_start_time))
-        st.success('Modelling Done!')
+            st.session_state.modelling_end_time = time.time()
 
+    st.info("Modelling Time: " + str(st.session_state.modelling_end_time - st.session_state.modelling_start_time) + " seconds")
+        
+    st.success('Modelling Done!')
+
+    st.subheader("Model Setting")
+    st.dataframe(st.session_state.Setup_df)
+    Setup_df = st.session_state.Setup_df.to_csv().encode('utf-8')
+    
+    st.download_button("Download The Model Setting Report",
+                       Setup_df,
+                       "The Model Setting Report.csv",
+                       "text/csv",
+                       key='download-Model Setting Report')
+        
 if choice == "Model_Selection":
         
         st.header("Model Comparison")
         st.dataframe(st.session_state.Compare_df)
+        
+        Compare_df = st.session_state.Compare_df.to_csv().encode('utf-8')
+        st.download_button("Download The Model Comparison Report",
+                           Compare_df,
+                           "The Model Comparison Report.csv",
+                           "text/csv",
+                           key='download-Model Comparison Report')
         
         st.session_state.select_model = st.selectbox("Select the best model", st.session_state.Compare_df.index)
 
@@ -169,56 +202,100 @@ if choice == "Model_Selection":
                     st.session_state.tuning_end_time = time.time()
                 
                 
-                st.info("Hyperparameter Tuning Time: " + str(st.session_state.tuning_end_time
-                                                             - st.session_state.tuning_start_time))
+            st.info("Hyperparameter Tuning Time: " + str(st.session_state.tuning_end_time
+                                                         - st.session_state.tuning_start_time)
+                                                         +" seconds")
+        
+            st.success('Hyperparameter Tuning Done!')
+
+        # 튜닝된 모델의 파라미터 확인
+        if st.session_state.turn_model is not None:
+            params_before = pd.DataFrame(
+                [st.session_state.best_model.get_params()]).T.reset_index()
+            params_before.columns = ['params', 'Before']
+            params_after = pd.DataFrame(
+                [st.session_state.turn_model.get_params()]).T.reset_index()
+            params_after.columns = ['params', 'After']
+            st.session_state.params_comparison = params_before.merge(params_after, on='params')
             
-                st.success('Hyperparameter Tuning Done!')
+            st.header("The Report of Hyperparameter Tuning")
+            
+            if st.session_state.Model == cls:
+                st.subheader("Hyperparameter Tuning Before & After")
+                csv_params = st.session_state.params_comparison.to_csv().encode('utf-8')
+                
+                st.download_button("Download The Params_comparison Report",
+                                   csv_params,
+                                   "The Params_comparison Report.csv",
+                                   "text/csv",
+                                   key='download-Params_comparison Report')
+                
+                st.dataframe(st.session_state.params_comparison)
+                
+                st.subheader("Turning Before Model Classification Report")
+                
+                img_before = st.session_state.Model.plot_model(
+                    st.session_state.best_model, plot="class_report",display_format="streamlit",  save=True)
+                st.image(img_before)
+                
+                st.subheader("Turning After Model Classification Report")
+                img_after = st.session_state.Model.plot_model(
+                    st.session_state.turn_model, plot="class_report",display_format="streamlit",  save=True)
+                st.image(img_after)
 
-                # 튜닝된 모델의 파라미터 확인
-                if st.session_state.turn_model is not None:
-                    params_before = pd.DataFrame(
-                        [st.session_state.best_model.get_params()]).T.reset_index()
-                    params_before.columns = ['params', 'Before']
+                # 모델의 ROC Curves 시각화
+                st.subheader("AUC Curve_After Tuning")
+                img = st.session_state.Model.plot_model(
+                    st.session_state.turn_model, plot="auc", display_format="streamlit", 
+                    save=True)
+                st.image(img)
 
-                    params_after = pd.DataFrame(
-                        [st.session_state.turn_model.get_params()]).T.reset_index()
-                    params_after.columns = ['params', 'After']
+                st.subheader("Confusion Matrix_After Tuning")
+                img2 = st.session_state.Model.plot_model(
+                    st.session_state.turn_model, plot="confusion_matrix",display_format="streamlit",save=True)
+                st.image(img2)
 
-                    params_comparison = params_before.merge(params_after, on='params')
+                st.subheader("Feature Importance_After Tuning")
+                img3 = st.session_state.Model.plot_model(
+                    st.session_state.turn_model, plot="feature", display_format="streamlit",save=True)
+                st.image(img3)
+            
+            elif st.session_state.Model == reg:
+                st.subheader("Hyperparameter Tuning Before & After")
+                csv_params = st.session_state.params_comparison.to_csv().encode('utf-8')
+                
+                st.download_button("Download The Params_comparison Report",
+                                   csv_params,
+                                   "The Params_comparison Report.csv",
+                                   "text/csv",
+                                   key='download-Params_comparison Report')
+                
+                st.dataframe(st.session_state.params_comparison)
 
-                    st.header("The Report of Hyperparameter Tuning")
-
-                    st.subheader("Turning Before Model Classification Report")
-                    img_before = st.session_state.Model.plot_model(
-                        st.session_state.best_model, plot="class_report", display_format="streamlit", save=True)
-                    st.image(img_before)
-
-                    st.subheader("Turning After Model Classification Report")
-                    img_after = st.session_state.Model.plot_model(
-                        st.session_state.turn_model, plot="class_report", display_format="streamlit", save=True)
-                    st.image(img_after)
-
-                    st.subheader("Hyperparameter Tuning Before & After")
-                    st.dataframe(params_comparison)
-
-        # 모델의 ROC Curves 시각화
-        st.subheader("AUC Curve_After Tuning")
-        img = st.session_state.Model.plot_model(
-            st.session_state.turn_model, plot="auc", display_format="streamlit", save=True
-        )
-        st.image(img)
-
-        st.subheader("Confusion Matrix_After Tuning")
-        img2 = st.session_state.Model.plot_model(
-            st.session_state.turn_model, plot="confusion_matrix", display_format="streamlit", save=True
-        )
-        st.image(img2)
-
-        st.subheader("Feature Importance_After Tuning")
-        img3 = st.session_state.Model.plot_model(
-            st.session_state.turn_model, plot="feature", display_format="streamlit", save=True
-        )
-        st.image(img3)
+                st.subheader("Turning Before Model Regression residuals")
+                img_before = st.session_state.Model.plot_model(
+                    st.session_state.best_model, plot="residuals", display_format="streamlit", save=True)
+                st.image(img_before)
+                
+                st.subheader("Turning After Model Regression residuals")
+                img_after = st.session_state.Model.plot_model(
+                    st.session_state.turn_model, plot="residuals", display_format="streamlit", save=True)
+                st.image(img_after)
+                
+                st.subheader("Turning After Model Regression error")
+                img1 = st.session_state.Model.plot_model(
+                    st.session_state.turn_model, plot="error", display_format="streamlit",  save=True)
+                st.image(img1)
+                
+                st.subheader("Turning After Model Regression learning curve")
+                img2 = st.session_state.Model.plot_model(
+                    st.session_state.turn_model, plot="learning", display_format="streamlit", save=True)
+                st.image(img2)
+                
+                st.subheader("Feature Importance_After Tuning")
+                img3 = st.session_state.Model.plot_model(
+                    st.session_state.turn_model, plot="feature", display_format="streamlit",save=True)
+                st.image(img3)
 
         st.session_state.Model.save_model(st.session_state.turn_model, 'best_model')
 
@@ -235,66 +312,79 @@ if choice == "Evaluation":
             st.session_state.y_pred_df = st.session_state.Model.predict_model(
                 st.session_state.turn_model, data=st.session_state.X_test)
             st.session_state.y_pred_df['y_true'] = st.session_state.y_test
+
+            if st.session_state.Model == cls:
     
-            st.session_state.y_pred = st.session_state.y_pred_df["prediction_label"]
+                st.session_state.y_pred = st.session_state.y_pred_df["prediction_label"]
     
-            # classification_report를 딕셔너리 형태로 변환 후 데이터프레임 생성
-            report_dict = classification_report(st.session_state.y_test, st.session_state.y_pred,
-                                                output_dict=True)
-            st.session_state.eval_report_df = pd.DataFrame(report_dict).transpose()
-            st.session_state.Evaluation_end_time = time.time()
+                # classification_report를 딕셔너리 형태로 변환 후 데이터프레임 생성
+                report_dict = classification_report(st.session_state.y_test, st.session_state.y_pred,
+                                                    output_dict=True)
+                st.session_state.eval_report_df = pd.DataFrame(report_dict).transpose()
+            
+                st.session_state.Evaluation_end_time = time.time()
+    
+            elif st.session_state.Model == reg:
+    
+                st.session_state.y_pred = st.session_state.y_pred_df["prediction_label"]
+
+                st.session_state.eval_report_df = st.session_state.Model.pull()
+
+                st.session_state.Evaluation_end_time = time.time()
     
     # Streamlit에서 출력
     st.info("Evaluation Time: " + str(st.session_state.Evaluation_end_time 
                                       - st.session_state.Evaluation_start_time) + " seconds")
     
+    st.subheader("Evaluation Report")
+    st.dataframe(st.session_state.eval_report_df)
+
+
+    # 예측 결과 다운로드 버튼(report)
+    csv = st.session_state.eval_report_df.to_csv().encode('utf-8')
+    st.download_button("Download The Evaluation Report",
+                       csv,
+                       "Evaluation_Report.csv",
+                       "text/csv",
+                       key='download-eval_report')
+
     st.subheader("Predictions and True Values")
     st.info("Test Data Length: " + str(len(st.session_state.y_pred_df)))
     st.dataframe(st.session_state.y_pred_df)
-    
-    st.subheader("Classification Report")
-    st.dataframe(st.session_state.eval_report_df)  # 인터랙티브 테이블 형태로 출력
 
     if (st.session_state.y_pred_df is not None) and (st.session_state.eval_report_df is not None):
-
+                
         # 예측 결과 다운로드 버튼(df)
         csv_df = st.session_state.y_pred_df.to_csv().encode('utf-8')
-        st.download_button(
-            "Download Predictions and True Values ",
-            csv_df,
-            "eval_result.csv",
-            "text/csv",
-            key='download-eval_result')
-        
-        # 예측 결과 다운로드 버튼(report)
-        csv = st.session_state.eval_report_df.to_csv().encode('utf-8')
-        st.download_button(
-            "Download The Classification Report",
-            csv,
-            "eval_report.csv",
-            "text/csv",
-            key='download-eval_report')
-        
+        st.download_button("Download Predictions and True Values ",
+                           csv_df,
+                           "The Evaluation_result.csv",
+                           "text/csv",
+                           key='download-eval_result')
 
-        
 if choice == "Download": 
     with open('best_model.pkl', 'rb') as f: 
         st.download_button('Download The Model', f, file_name="best_model.pkl")
 
 if choice == "Test Model":
 
+    if "result_df" not in st.session_state:
+        st.session_state.result_df = None
+    
+    if "df_report" not in st.session_state:
+        st.session_state.df_report = None
+
     st.title("Test Model ML Model")
 
     mdl = st.selectbox('Choice Modelling Type : ',['Classification','Regression'])
 
-    test_option = st.selectbox('Choice Test Type : ',['예측만 수행','예측과 결과값 비교'])
+    st.session_state.test_option = st.selectbox('Choice Test Type : ',['예측만 수행','예측과 결과값 비교'])
 
     if mdl == 'Classification':
         st.session_state.Test_Model = cls
-        #from pycaret.classification import setup, compare_models, pull, save_model
+        
     elif mdl == 'Regression':
         st.session_state.Test_Model = reg
-        #from pycaret.regression import setup, compare_models, pull, save_model
 
     if st.session_state.Test_Model is not None:
         uploaded_model = st.file_uploader("PyCaret 모델 파일(.pkl)을 업로드하세요", type=["pkl"])
@@ -321,8 +411,8 @@ if choice == "Test Model":
             st.error(f"모델 로드 중 오류가 발생했습니다: {e}")
 
     if 'model' in locals():  # 모델이 로드된 경우에만 실행
-
-        if test_option == '예측과 결과값 비교':
+        
+        if st.session_state.test_option == '예측과 결과값 비교':
 
             st.subheader("예측을 위한 데이터 업로드")
             data_file_y_test = st.file_uploader("예측할 데이터 파일(csv)을 업로드하세요", type=["csv"])
@@ -356,53 +446,73 @@ if choice == "Test Model":
 
                     with st.spinner('Evaluation in progress...'):
 
-                        start_time = time.time()
+                        st.session_state.Test_start_time = time.time()
 
                         # PyCaret의 predict_model 함수를 사용하여 예측 수행
-                        predictions = st.session_state.Test_Model.predict_model(model,  data=data_y_test)
+                        st.session_state.Prediction_df = st.session_state.Test_Model.predict_model(model,  data=data_y_test)
 
-                        st.write("예측 결과:")
+                        if st.session_state.Test_Model == cls:
 
-                        st.session_state.Prediction_df = predictions
-                        st.dataframe(st.session_state.Prediction_df)
+                            st.session_state.y_test = st.session_state.Prediction_df["prediction_label"]
 
-                        st.session_state.y_test = predictions["prediction_label"]
-                 
-                        # classification_report를 딕셔너리 형태로 변환 후 데이터프레임 생성
-                        report_dict = classification_report(st.session_state.y_true, 
-                                                            st.session_state.y_test,
-                                                            output_dict=True)
-                        st.session_state.result_df = pd.concat([st.session_state.Prediction_df,
-                                                st.session_state.y_true],
-                                                axis=1)
-                        st.session_state.df_report = pd.DataFrame(report_dict).transpose()
+                            st.session_state.result_df = pd.concat([st.session_state.Prediction_df,
+                                                    st.session_state.y_true],
+                                                    axis=1)
 
-                        end_time = time.time()
-                        st.session_state.total_time = end_time - start_time
+                            # classification_report를 딕셔너리 형태로 변환 후 데이터프레임 생성
+                            report_dict = classification_report(st.session_state.y_true, 
+                                                                st.session_state.y_test,
+                                                                output_dict=True)
+                            
+                            st.session_state.df_report = pd.DataFrame(report_dict).transpose()
+
+                            st.session_state.Test_end_time = time.time()
+
+                        elif st.session_state.Test_Model == reg:
+                        
+                            st.session_state.y_test = st.session_state.Prediction_df["prediction_label"]
+
+                            mae = mean_absolute_error(st.session_state.y_true,st.session_state.y_test)
+                            mse = mean_squared_error(st.session_state.y_true,st.session_state.y_test)
+                            rmse = root_mean_squared_error(st.session_state.y_true,st.session_state.y_test)
+                            r2 = r2_score(st.session_state.y_true,st.session_state.y_test)
+
+                            data_report = {"MAE":[mae], "MSE":[mse], "RMSE":[rmse], "R2":[r2]}
+
+                            st.session_state.df_report = pd.DataFrame(data_report)
+
+                            st.session_state.result_df = pd.concat([st.session_state.Prediction_df,
+                                                    st.session_state.y_true],
+                                                    axis=1)
+
+                            st.session_state.Test_end_time = time.time()
+
+                st.session_state.total_time = st.session_state.Test_end_time - st.session_state.Test_start_time
 
                 # Streamlit에서 출력
                 st.info("Evaluation Time: " + str(st.session_state.total_time) 
-                        + " seconds")                
-            
-                st.subheader("Predictions and True Values")
-                st.dataframe(st.session_state.result_df)
-                
-                st.subheader("Classification Report")
-                st.dataframe(st.session_state.df_report)  # 인터랙티브 테이블 형태로 출력
+                        + " seconds")
 
-                
-                
-                if st.session_state.df_report is not None:
+                if st.session_state.df_report is not None:                
+            
+                    st.subheader("Test Report")
+                    st.dataframe(st.session_state.df_report)
 
                     # 예측 결과 다운로드 버튼(report)
                     csv = st.session_state.df_report.to_csv().encode('utf-8')
                     st.download_button(
-                        "Download Classification Report",
+                        "Download Test Report",
                         csv,
                         "test_report.csv",
                         "text/csv",
                         key='download-csv'
                     )
+
+                if st.session_state.result_df is not None: 
+
+                    st.subheader("Predictions and True Values")
+                    st.info("Test Data Length: " + str(len(st.session_state.result_df)))
+                    st.dataframe(st.session_state.result_df)
 
                     # 예측 결과 다운로드 버튼(df)
                     csv_df = st.session_state.result_df.to_csv().encode('utf-8')
@@ -431,16 +541,17 @@ if choice == "Test Model":
 
                     with st.spinner('Evaluation in progress...'):
 
-                        start_time = time.time()
+                        st.session_state.Test_start_time = time.time()
 
                         # PyCaret의 predict_model 함수를 사용하여 예측 수행
                         predictions = st.session_state.Test_Model.predict_model(model,  data=data_y_test)
                         
                         st.session_state.Prediction_df = predictions
 
-                        end_time = time.time()
+                        st.session_state.Test_end_time = time.time()
 
-                        st.session_state.total_time = end_time - start_time
+                
+                st.session_state.total_time = st.session_state.Test_end_time - st.session_state.Test_start_time
                 
                 st.info("Evaluation Time: " + str(st.session_state.total_time) + " seconds")
                 st.write("예측 결과:")

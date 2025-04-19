@@ -1,0 +1,23 @@
+,Description,Value
+0,Session id,2428
+1,Target,Survived
+2,Target type,Binary
+3,Original data shape,"(174, 4)"
+4,Transformed data shape,"(174, 4)"
+5,Transformed train set shape,"(121, 4)"
+6,Transformed test set shape,"(53, 4)"
+7,Numeric features,2
+8,Categorical features,1
+9,Preprocess,True
+10,Imputation type,simple
+11,Numeric imputation,mean
+12,Categorical imputation,mode
+13,Maximum one-hot encoding,25
+14,Encoding method,
+15,Fold Generator,StratifiedKFold
+16,Fold Number,10
+17,CPU Jobs,-1
+18,Use GPU,False
+19,Log Experiment,False
+20,Experiment Name,clf-default-name
+21,USI,ae29
